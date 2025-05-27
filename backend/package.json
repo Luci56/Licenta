@@ -4,15 +4,23 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "populate:small": "node scripts/populateDatabase.js 50",
+    "populate:medium": "node scripts/populateDatabase.js 100",
+    "populate:large": "node scripts/populateDatabase.js 500",
+    "analyze:database": "node scripts/analyzeDatabase.js",
+    "clear:database": "node scripts/clearDatabase.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.9.0",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
+    "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "mathjs": "^14.0.0",
     "mongoose": "^8.9.5"

@@ -16,54 +16,113 @@ router.post("/register", async (req, res) => {
       gender,
       height,
       diagnosisYear,
+      dailyData: [],
+      analysisData: [],
     });
 
-    // Salvăm utilizatorul în baza de date
     await user.save();
     res.status(201).json({ message: "Utilizator înregistrat cu succes!" });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error("Eroare la înregistrare:", err);
+    res.status(400).json({ message: "Eroare la înregistrare: " + err.message });
   }
 });
 
-// Adaugă date zilnice pentru un utilizator
+// Salvare glicemie zilnică - CORECTATĂ
 router.post("/add-daily-data/:id", async (req, res) => {
   const { id } = req.params;
-  const {
-    systolicPressure,
-    diastolicPressure,
-    cholesterolHDL,
-    cholesterolLDL,
-    hemoglobinA1c,
-  } = req.body;
+  // Acceptăm atât bloodGlucose cât și bloodSugar pentru compatibilitate
+  const bloodGlucose = req.body.bloodGlucose || req.body.bloodSugar;
+
+  console.log("Date primite pentru glicemie:", req.body);
 
   try {
-    // Găsim utilizatorul după ID
-    const user = await User.findById(id);
+    // Validăm datele primite
+    if (!bloodGlucose || isNaN(bloodGlucose) || bloodGlucose <= 0) {
+      return res.status(400).json({ message: "Glicemia trebuie să fie un număr pozitiv!" });
+    }
 
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: "Utilizatorul nu a fost găsit!" });
     }
 
-    // Adăugăm datele zilnice
+    // Adăugăm noua valoare în array-ul dailyData
     user.dailyData.push({
-      systolicPressure,
-      diastolicPressure,
-      cholesterolHDL,
-      cholesterolLDL,
-      hemoglobinA1c,
+      date: new Date(),
+      bloodGlucose: Number(bloodGlucose)
     });
 
-    // Salvăm modificările în baza de date
+    // Marcare explicită a modificării
+    user.markModified("dailyData");
+
+    // Salvăm utilizatorul actualizat
     await user.save();
-    res.status(200).json({ message: "Datele zilnice au fost salvate cu succes!" });
+    
+    res.status(200).json({ message: "Glicemia a fost salvată cu succes!" });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error("Eroare la salvarea glicemiei:", err);
+    res.status(400).json({ message: "Eroare la salvarea glicemiei: " + err.message });
   }
 });
 
+// Salvare date analiză - CORECTATĂ
+router.post("/add-analysis-data/:id", async (req, res) => {
+  const { id } = req.params;
+  const { 
+    systolicPressure, 
+    diastolicPressure, 
+    cholesterolHDL, 
+    cholesterolLDL, 
+    hemoglobinA1c,
+    hasHyperlipidemia,
+    hasHypertension,
+    diseaseDuration
+  } = req.body;
 
-// Ruta pentru login
+  console.log("Date primite pentru analiză:", req.body);
+
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "Utilizatorul nu a fost găsit!" });
+    }
+
+    // Formatăm hemoglobinA1c pentru a avea o singură zecimală
+    const formattedHbA1c = parseFloat(hemoglobinA1c).toFixed(1);
+
+    // Verificăm și creăm array-ul analysisData dacă nu există
+    if (!user.analysisData || !Array.isArray(user.analysisData)) {
+      user.analysisData = [];
+    }
+
+    // Adăugăm noile date în array-ul analysisData
+    user.analysisData.push({
+      date: new Date(),
+      systolicPressure: Number(systolicPressure),
+      diastolicPressure: Number(diastolicPressure),
+      cholesterolHDL: Number(cholesterolHDL),
+      cholesterolLDL: Number(cholesterolLDL),
+      hemoglobinA1c: Number(formattedHbA1c),
+      hasHyperlipidemia: hasHyperlipidemia === true || hasHyperlipidemia === "true" || hasHyperlipidemia === "Da",
+      hasHypertension: hasHypertension === true || hasHypertension === "true" || hasHypertension === "Da",
+      diseaseDuration: Number(diseaseDuration)
+    });
+
+    // Marcare explicită a modificării
+    user.markModified("analysisData");
+    
+    // Salvăm utilizatorul actualizat
+    await user.save();
+    
+    res.status(200).json({ message: "Datele analizelor au fost salvate cu succes!" });
+  } catch (err) {
+    console.error("Eroare la salvarea datelor de analiză:", err);
+    res.status(400).json({ message: "Eroare la salvarea datelor de analiză: " + err.message });
+  }
+});
+
+// Login utilizator
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -79,11 +138,33 @@ router.post("/login", async (req, res) => {
 
     res.status(200).json({ message: "Conectare reușită!", user });
   } catch (err) {
-    res.status(500).json({ message: "Eroare de server!" });
+    console.error("Eroare la autentificare:", err);
+    res.status(500).json({ message: "Eroare de server la autentificare!" });
   }
 });
 
-module.exports = router;
+// Obținere date utilizator
+router.get("/:id", async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "Utilizatorul nu a fost găsit!" });
+    }
+    
+    console.log("Date utilizator trimise:", {
+      id: user._id,
+      email: user.email,
+      dailyData: user.dailyData ? user.dailyData.length : 0,
+      analysisData: user.analysisData ? (Array.isArray(user.analysisData) ? user.analysisData.length : "obiect") : "null"
+    });
+    
+    res.status(200).json(user);
+  } catch (err) {
+    console.error("Eroare la obținerea datelor utilizatorului:", err);
+    res.status(400).json({ message: "Eroare la obținerea datelor: " + err.message });
+  }
+});
 
 module.exports = router;
