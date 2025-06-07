@@ -1,443 +1,373 @@
 const User = require("../models/User");
+const EnhancedTD3KAlgorithm = require("../utils/EnhancedTD3KAlgorithm");
 
 /**
- * Enhanced Patient Similarity Calculator
- * Based on the research paper: "Diabetes medication recommendation system using patient similarity analytics"
- * Published in Scientific Reports 2022
- * 
- * This implementation uses:
- * 1. Data-driven and Domain Knowledge (D3K) similarity measure
- * 2. Mahalanobis distance for better clinical dissimilarity measurement
- * 3. HbA1c trajectory analysis (T-D3K approach)
- * 4. Weighted similarity based on medical importance
+ * Patient Similarity Calculator conform articol Nature 2022
+ * "Diabetes medication recommendation system using patient similarity analytics"
+ * Scientific Reports 12, 20910 (2022)
+ * https://doi.org/10.1038/s41598-022-24494-x
  */
 
-class EnhancedPatientSimilarityCalculator {
-  constructor() {
-    // Medical parameter ranges based on clinical guidelines from the research
-    this.ranges = {
-      age: { min: 21, max: 100 },
-      systolicPressure: { min: 80, max: 250 },
-      diastolicPressure: { min: 50, max: 150 },
-      cholesterolHDL: { min: 15, max: 150 },
-      cholesterolLDL: { min: 50, max: 200 },
-      hemoglobinA1c: { min: 4.0, max: 20.0 },
-      diseaseDuration: { min: 0, max: 80 }
-    };
-
-    // Enhanced weights based on clinical importance from research
-    // HbA1c has highest weight as it's the primary diabetes control indicator
-    this.clinicalWeights = {
-      age: 0.05,
-      gender: 0.05,
-      systolicPressure: 0.10,
-      diastolicPressure: 0.08,
-      cholesterolHDL: 0.08,
-      cholesterolLDL: 0.08,
-      hemoglobinA1c: 0.30,  // Highest weight - primary diabetes indicator
-      hasHyperlipidemia: 0.08,
-      hasHypertension: 0.08,
-      diseaseDuration: 0.10   // Important for disease progression
-    };
-
-    // HbA1c trajectory threshold for determining significant changes
-    this.hba1cThreshold = 0.3; // 0.3% change considered significant
-    
-    // Normal HbA1c range for trajectory analysis
-    this.normalHbA1cRange = { min: 4.0, max: 7.0 };
-  }
-
-  /**
-   * Normalize value using min-max scaling
-   * @param {number} value - Value to normalize
-   * @param {number} min - Minimum value in range
-   * @param {number} max - Maximum value in range
-   * @returns {number} Normalized value between 0 and 1
-   */
-  normalizeValue(value, min, max) {
-    if (max === min) return 0.5; // Avoid division by zero
-    return Math.max(0, Math.min(1, (value - min) / (max - min)));
-  }
-
-  /**
-   * Calculate Mahalanobis distance-inspired weighted similarity
-   * This is a simplified version since we don't have the full covariance matrix
-   * @param {Array} vector1 - First patient's feature vector
-   * @param {Array} vector2 - Second patient's feature vector
-   * @param {Array} weights - Feature weights
-   * @returns {number} Weighted distance
-   */
-  calculateWeightedDistance(vector1, vector2, weights) {
-    if (vector1.length !== vector2.length || vector1.length !== weights.length) {
-      throw new Error("Vectors and weights must have the same length");
-    }
-
-    let distance = 0;
-    for (let i = 0; i < vector1.length; i++) {
-      const diff = vector1[i] - vector2[i];
-      // Apply weight to the squared difference (simplified Mahalanobis approach)
-      distance += weights[i] * (diff * diff);
-    }
-    
-    return Math.sqrt(distance);
-  }
-
-  /**
-   * Map HbA1c trajectory to symbolic representation
-   * Based on the paper's approach: N=Normal, A=Abnormal, U=Increasing, D=Decreasing
-   * @param {Array} hba1cValues - Array of HbA1c values over time
-   * @returns {string} Symbolic trajectory representation
-   */
-  mapHbA1cTrajectory(hba1cValues) {
-    if (!hba1cValues || hba1cValues.length < 2) {
-      return "N"; // Default for insufficient data
-    }
-
-    let trajectory = "";
-    
-    for (let i = 0; i < hba1cValues.length - 1; i++) {
-      const v1 = hba1cValues[i];
-      const v2 = hba1cValues[i + 1];
-      const difference = Math.abs(v2 - v1);
-      
-      if (difference <= this.hba1cThreshold) {
-        // Small change - classify as Normal or Abnormal based on range
-        if (v1 >= this.normalHbA1cRange.min && v1 <= this.normalHbA1cRange.max) {
-          trajectory += "N";
-        } else {
-          trajectory += "A";
-        }
-      } else {
-        // Significant change - classify as Increasing or Decreasing
-        if (v2 > v1) {
-          trajectory += "U"; // Uptrend
-        } else {
-          trajectory += "D"; // Downtrend
-        }
-      }
-    }
-    
-    return trajectory;
-  }
-
-  /**
-   * Generate n-grams from trajectory string
-   * @param {string} trajectory - Symbolic trajectory
-   * @param {number} n - N-gram size (default 6 as per paper)
-   * @returns {Array} Array of n-grams
-   */
-  generateNGrams(trajectory, n = 6) {
-    if (trajectory.length < n) {
-      return [trajectory]; // Return the whole string if shorter than n
-    }
-    
-    const nGrams = [];
-    for (let i = 0; i <= trajectory.length - n; i++) {
-      nGrams.push(trajectory.substring(i, i + n));
-    }
-    return nGrams;
-  }
-
-  /**
-   * Calculate trajectory similarity using cosine similarity
-   * @param {Array} trajectory1 - First patient's trajectory n-grams
-   * @param {Array} trajectory2 - Second patient's trajectory n-grams
-   * @returns {number} Trajectory similarity score (0-1)
-   */
-  calculateTrajectorySimilarity(trajectory1, trajectory2) {
-    // Create vocabulary of all unique n-grams
-    const allNGrams = new Set([...trajectory1, ...trajectory2]);
-    const vocab = Array.from(allNGrams);
-    
-    // Create frequency vectors
-    const vector1 = vocab.map(ngram => trajectory1.filter(t => t === ngram).length);
-    const vector2 = vocab.map(ngram => trajectory2.filter(t => t === ngram).length);
-    
-    // Calculate cosine similarity
-    const dotProduct = vector1.reduce((sum, v1, i) => sum + v1 * vector2[i], 0);
-    const magnitude1 = Math.sqrt(vector1.reduce((sum, v) => sum + v * v, 0));
-    const magnitude2 = Math.sqrt(vector2.reduce((sum, v) => sum + v * v, 0));
-    
-    if (magnitude1 === 0 || magnitude2 === 0) {
-      return 0;
-    }
-    
-    return dotProduct / (magnitude1 * magnitude2);
-  }
-
-  /**
-   * Extract clinical profile vector from user data
-   * @param {Object} userData - User data object
-   * @param {Object} analysisData - User's analysis data
-   * @returns {Array} Normalized clinical profile vector
-   */
-  extractClinicalProfile(userData, analysisData) {
-    const currentYear = new Date().getFullYear();
-    const age = currentYear - userData.birthYear;
-    const genderValue = userData.gender === "Masculin" ? 1 : 0;
-    
-    return [
-      this.normalizeValue(age, this.ranges.age.min, this.ranges.age.max),
-      genderValue, // Binary: 1 for male, 0 for female
-      this.normalizeValue(
-        analysisData.systolicPressure || 120, 
-        this.ranges.systolicPressure.min, 
-        this.ranges.systolicPressure.max
-      ),
-      this.normalizeValue(
-        analysisData.diastolicPressure || 80, 
-        this.ranges.diastolicPressure.min, 
-        this.ranges.diastolicPressure.max
-      ),
-      this.normalizeValue(
-        analysisData.cholesterolHDL || 50, 
-        this.ranges.cholesterolHDL.min, 
-        this.ranges.cholesterolHDL.max
-      ),
-      this.normalizeValue(
-        analysisData.cholesterolLDL || 100, 
-        this.ranges.cholesterolLDL.min, 
-        this.ranges.cholesterolLDL.max
-      ),
-      this.normalizeValue(
-        analysisData.hemoglobinA1c || 7.0, 
-        this.ranges.hemoglobinA1c.min, 
-        this.ranges.hemoglobinA1c.max
-      ),
-      analysisData.hasHyperlipidemia ? 1 : 0,
-      analysisData.hasHypertension ? 1 : 0,
-      this.normalizeValue(
-        analysisData.diseaseDuration || 5, 
-        this.ranges.diseaseDuration.min, 
-        this.ranges.diseaseDuration.max
-      )
-    ];
-  }
-
-  /**
-   * Calculate D3K (Data-driven and Domain Knowledge) similarity
-   * @param {Array} profile1 - First patient's clinical profile
-   * @param {Array} profile2 - Second patient's clinical profile
-   * @returns {number} D3K similarity score (0-1)
-   */
-  calculateD3KSimilarity(profile1, profile2) {
-    const weights = Object.values(this.clinicalWeights);
-    const distance = this.calculateWeightedDistance(profile1, profile2, weights);
-    
-    // Convert distance to similarity (higher distance = lower similarity)
-    // Using exponential decay for better discrimination
-    return Math.exp(-distance);
-  }
-
-  /**
-   * Calculate combined T-D3K (Trajectory + D3K) similarity
-   * @param {Object} currentUser - Current user data
-   * @param {Object} otherUser - Other user data for comparison
-   * @returns {number} Combined similarity score (0-1)
-   */
-  calculateTD3KSimilarity(currentUser, otherUser) {
-    // Get latest analysis data
-    const currentAnalysis = this.getLatestAnalysisData(currentUser);
-    const otherAnalysis = this.getLatestAnalysisData(otherUser);
-    
-    if (!currentAnalysis || !otherAnalysis) {
-      return 0; // Cannot compare without analysis data
-    }
-
-    // Calculate D3K similarity based on clinical profiles
-    const currentProfile = this.extractClinicalProfile(currentUser, currentAnalysis);
-    const otherProfile = this.extractClinicalProfile(otherUser, otherAnalysis);
-    const d3kSimilarity = this.calculateD3KSimilarity(currentProfile, otherProfile);
-
-    // Calculate trajectory similarity if enough HbA1c data exists
-    let trajectorySimilarity = 0.5; // Default neutral similarity
-    
-    if (currentUser.dailyData && otherUser.dailyData) {
-      // Extract HbA1c values from analysis data over time
-      const currentHbA1cValues = this.extractHbA1cTrajectory(currentUser);
-      const otherHbA1cValues = this.extractHbA1cTrajectory(otherUser);
-      
-      if (currentHbA1cValues.length >= 2 && otherHbA1cValues.length >= 2) {
-        const currentTrajectory = this.mapHbA1cTrajectory(currentHbA1cValues);
-        const otherTrajectory = this.mapHbA1cTrajectory(otherHbA1cValues);
-        
-        const currentNGrams = this.generateNGrams(currentTrajectory);
-        const otherNGrams = this.generateNGrams(otherTrajectory);
-        
-        trajectorySimilarity = this.calculateTrajectorySimilarity(currentNGrams, otherNGrams);
-      }
-    }
-
-    // Combine D3K and trajectory similarities (equal weights as per paper)
-    const alpha = 0.5; // Weight for D3K similarity
-    const beta = 0.5;  // Weight for trajectory similarity
-    
-    return alpha * d3kSimilarity + beta * trajectorySimilarity;
-  }
-
-  /**
-   * Extract HbA1c trajectory from user's analysis data
-   * @param {Object} user - User data
-   * @returns {Array} Array of HbA1c values over time
-   */
-  extractHbA1cTrajectory(user) {
-    if (!user.analysisData || !Array.isArray(user.analysisData)) {
-      return [];
-    }
-    
-    // Sort by date and extract HbA1c values
-    return user.analysisData
-      .filter(data => data.hemoglobinA1c)
-      .sort((a, b) => new Date(a.date) - new Date(b.date))
-      .map(data => data.hemoglobinA1c);
-  }
-
-  /**
-   * Get latest analysis data from user
-   * @param {Object} user - User data
-   * @returns {Object|null} Latest analysis data
-   */
-  getLatestAnalysisData(user) {
-    if (!user.analysisData) return null;
-    
-    if (Array.isArray(user.analysisData)) {
-      if (user.analysisData.length === 0) return null;
-      const sorted = [...user.analysisData].sort((a, b) => 
-        new Date(b.date) - new Date(a.date)
-      );
-      return sorted[0];
-    } else {
-      return user.analysisData;
-    }
-  }
-
-  /**
-   * Get latest blood sugar value from user's daily data
-   * @param {Object} user - User data
-   * @returns {number|null} Latest blood sugar value
-   */
-  getLatestBloodSugar(user) {
-    if (!user.dailyData || user.dailyData.length === 0) return null;
-    
-    const sorted = [...user.dailyData].sort((a, b) => 
-      new Date(b.date) - new Date(a.date)
-    );
-    return sorted[0].bloodGlucose || sorted[0].bloodSugar;
-  }
-}
-
-/**
- * Enhanced similarity calculation function for the API
- */
 const calculatePatientSimilarity = async (req, res) => {
   try {
     const { userId } = req.params;
     
-    // Initialize the enhanced calculator
-    const calculator = new EnhancedPatientSimilarityCalculator();
+    console.log("=== DMRS T-D3K Algorithm Execution ===");
+    console.log("Conform Nature 2022: https://doi.org/10.1038/s41598-022-24494-x");
     
-    // Get current user
-    const currentUser = await User.findById(userId);
-    if (!currentUser) {
-      return res.status(404).json({ message: "Utilizatorul nu a fost găsit!" });
-    }
+    const td3kAlgorithm = new EnhancedTD3KAlgorithm();
     
-    // Get all other users
-    const allUsers = await User.find({ _id: { $ne: userId } });
-    if (allUsers.length === 0) {
-      return res.status(200).json({ 
-        message: "Nu există alți utilizatori pentru comparație!", 
-        currentUserDetails: {}, 
-        similarPatients: [] 
+    // Get target patient
+    const targetPatient = await User.findById(userId);
+    if (!targetPatient) {
+      return res.status(404).json({ 
+        message: "Target patient not found!",
+        reference: "T-D3K Algorithm - Nature 2022"
       });
     }
-
-    // Get current user's latest analysis data
-    const currentAnalysis = calculator.getLatestAnalysisData(currentUser);
-    if (!currentAnalysis) {
+    
+    // Get target patient's latest analysis
+    const targetAnalysis = td3kAlgorithm.getLatestAnalysisData(targetPatient);
+    if (!targetAnalysis) {
       return res.status(400).json({ 
-        message: "Utilizatorul curent nu are date de analiză!" 
+        message: "Target patient lacks analysis data required for T-D3K algorithm!",
+        requiredData: [
+          "systolicPressure", "diastolicPressure", 
+          "cholesterolHDL", "cholesterolLDL", "triglycerides",
+          "hemoglobinA1c", "hasHyperlipidemia", "hasHypertension",
+          "diseaseDuration"
+        ],
+        reference: "T-D3K Algorithm - Nature 2022"
       });
     }
 
-    console.log("Calculez similaritatea folosind algoritmul T-D3K îmbunătățit...");
+    // Get all other patients for comparison
+    const allPatients = await User.find({ _id: { $ne: userId } });
+    if (allPatients.length === 0) {
+      return res.status(200).json({ 
+        message: "No other patients available for similarity comparison!",
+        targetPatientProfile: {
+          patientGroup: td3kAlgorithm.classifyPatientGroup(targetAnalysis),
+          hba1c: targetAnalysis.hemoglobinA1c,
+          hba1cStatus: td3kAlgorithm.getHbA1cStatus(targetAnalysis.hemoglobinA1c)
+        },
+        similarPatients: [],
+        recommendations: null,
+        algorithm: "T-D3K (Trajectory + Data-driven Domain Knowledge)",
+        reference: "Scientific Reports 12, 20910 (2022)"
+      });
+    }
 
-    // Calculate similarities with all other users
-    const similarityResults = [];
+    console.log(`Calculating T-D3K similarity for ${allPatients.length} patients...`);
     
-    for (const otherUser of allUsers) {
-      const otherAnalysis = calculator.getLatestAnalysisData(otherUser);
+    // Calculate T-D3K similarities
+    const similarityResults = [];
+    let patientsWithSufficientData = 0;
+    
+    for (const otherPatient of allPatients) {
+      const otherAnalysis = td3kAlgorithm.getLatestAnalysisData(otherPatient);
       
       if (otherAnalysis) {
-        // Calculate T-D3K similarity
-        const similarity = calculator.calculateTD3KSimilarity(currentUser, otherUser);
+        patientsWithSufficientData++;
         
-        // Get latest blood sugar for the other user
-        const latestBloodSugar = calculator.getLatestBloodSugar(otherUser);
+        // Calculate T-D3K similarity
+        const td3kSimilarity = td3kAlgorithm.calculateTD3KSimilarity(
+          targetPatient, 
+          otherPatient
+        );
+        
+        // Extract HbA1c trajectories for analysis
+        const targetTrajectory = td3kAlgorithm.extractHbA1cTrajectory(targetPatient);
+        const otherTrajectory = td3kAlgorithm.extractHbA1cTrajectory(otherPatient);
         
         similarityResults.push({
-          userId: otherUser._id,
-          email: otherUser.email,
-          similarity: similarity,
+          userId: otherPatient._id,
+          email: otherPatient.email,
+          similarity: td3kSimilarity,
+          patientGroup: td3kAlgorithm.classifyPatientGroup(otherAnalysis),
+          trajectoryLength: otherTrajectory.length,
           details: {
-            age: new Date().getFullYear() - otherUser.birthYear,
-            gender: otherUser.gender,
+            age: new Date().getFullYear() - otherPatient.birthYear,
+            gender: otherPatient.gender,
             systolicPressure: otherAnalysis.systolicPressure,
             diastolicPressure: otherAnalysis.diastolicPressure,
             cholesterolHDL: otherAnalysis.cholesterolHDL,
             cholesterolLDL: otherAnalysis.cholesterolLDL,
+            triglycerides: otherAnalysis.triglycerides,
             hemoglobinA1c: otherAnalysis.hemoglobinA1c,
             hasHyperlipidemia: otherAnalysis.hasHyperlipidemia,
             hasHypertension: otherAnalysis.hasHypertension,
             diseaseDuration: otherAnalysis.diseaseDuration,
-            bloodSugar: latestBloodSugar
+            medicationCount: td3kAlgorithm.getDMMedicationCount(otherPatient.currentMedication),
+            hba1cStatus: td3kAlgorithm.getHbA1cStatus(otherAnalysis.hemoglobinA1c),
+            bloodSugar: getLatestBloodSugar(otherPatient)
           }
         });
       }
     }
 
-    // Sort by similarity (descending)
+    // Sort by T-D3K similarity (descending)
     similarityResults.sort((a, b) => b.similarity - a.similarity);
+    
+    // Filter patients with meaningful similarity (threshold: 0.1)
+    const meaningfulSimilarities = similarityResults.filter(p => p.similarity > 0.1);
+    
+    console.log(`Found ${meaningfulSimilarities.length} patients with meaningful similarity (>0.1)`);
+    
+    // Generate medication recommendations using T-D3K
+    const recommendations = meaningfulSimilarities.length > 0 
+      ? td3kAlgorithm.generateMedicationRecommendations(
+          meaningfulSimilarities, 
+          targetPatient, 
+          10 // K=10 conform articolului
+        )
+      : null;
 
-    // Prepare current user details for response
-    const currentUserDetails = {
-      age: new Date().getFullYear() - currentUser.birthYear,
-      gender: currentUser.gender,
-      systolicPressure: currentAnalysis.systolicPressure,
-      diastolicPressure: currentAnalysis.diastolicPressure,
-      cholesterolHDL: currentAnalysis.cholesterolHDL,
-      cholesterolLDL: currentAnalysis.cholesterolLDL,
-      hemoglobinA1c: currentAnalysis.hemoglobinA1c,
-      hasHyperlipidemia: currentAnalysis.hasHyperlipidemia,
-      hasHypertension: currentAnalysis.hasHypertension,
-      diseaseDuration: currentAnalysis.diseaseDuration
+    // Prepare target patient profile
+    const targetPatientProfile = {
+      age: new Date().getFullYear() - targetPatient.birthYear,
+      gender: targetPatient.gender,
+      patientGroup: td3kAlgorithm.classifyPatientGroup(targetAnalysis),
+      systolicPressure: targetAnalysis.systolicPressure,
+      diastolicPressure: targetAnalysis.diastolicPressure,
+      cholesterolHDL: targetAnalysis.cholesterolHDL,
+      cholesterolLDL: targetAnalysis.cholesterolLDL,
+      triglycerides: targetAnalysis.triglycerides,
+      hemoglobinA1c: targetAnalysis.hemoglobinA1c,
+      hba1cStatus: td3kAlgorithm.getHbA1cStatus(targetAnalysis.hemoglobinA1c),
+      hasHyperlipidemia: targetAnalysis.hasHyperlipidemia,
+      hasHypertension: targetAnalysis.hasHypertension,
+      diseaseDuration: targetAnalysis.diseaseDuration,
+      medicationCount: td3kAlgorithm.getDMMedicationCount(targetPatient.currentMedication),
+      hba1cTrajectoryLength: td3kAlgorithm.extractHbA1cTrajectory(targetPatient).length
     };
 
-    console.log(`Găsiți ${similarityResults.length} pacienți pentru comparație`);
-    console.log("Top 3 similarități:", similarityResults.slice(0, 3).map(r => ({
-      email: r.email,
-      similarity: (r.similarity * 100).toFixed(1) + '%'
-    })));
+    // Performance metrics simulation conform articolului
+    const expectedHitRatios = {
+      'DM': 0.81,      // 81% conform articol
+      'DM_HLD': 0.84,  // 84% conform articol
+      'DM_HTN': 0.78,  // 78% conform articol
+      'DHL': 0.75      // 75% conform articol
+    };
+    
+    const patientGroup = targetPatientProfile.patientGroup;
+    const expectedHitRatio = expectedHitRatios[patientGroup] || 0.795; // Average
 
-    // Return top 10 similar patients
+    console.log("=== T-D3K Algorithm Results ===");
+    console.log(`Target Patient Group: ${patientGroup}`);
+    console.log(`Expected Hit Ratio: ${(expectedHitRatio * 100).toFixed(1)}%`);
+    console.log(`Top 3 Similar Patients:`);
+    meaningfulSimilarities.slice(0, 3).forEach((p, index) => {
+      console.log(`  ${index + 1}. Similarity: ${(p.similarity * 100).toFixed(1)}% | HbA1c: ${p.details.hemoglobinA1c}% | Group: ${p.patientGroup}`);
+    });
+
     res.status(200).json({
-      message: "Similaritate calculată cu succes folosind algoritmul T-D3K îmbunătățit",
-      algorithm: "T-D3K (Trajectory + Data-driven Domain Knowledge)",
-      currentUserDetails: currentUserDetails,
-      similarPatients: similarityResults.slice(0, 10),
-      totalPatientsCompared: similarityResults.length
+      success: true,
+      message: "Patient similarity calculated successfully using T-D3K algorithm",
+      algorithm: {
+        name: "T-D3K (Trajectory + Data-driven Domain Knowledge)",
+        components: [
+          "D3K Similarity (Clinical profile with learned Mahalanobis weights)",
+          "Trajectory Similarity (HbA1c patterns using n-grams and cosine similarity)"
+        ],
+        parameters: {
+          nGramSize: td3kAlgorithm.nGramSize,
+          trajectoryThreshold: td3kAlgorithm.trajectoryThreshold,
+          alpha: td3kAlgorithm.alpha,
+          beta: td3kAlgorithm.beta
+        },
+        reference: "Scientific Reports 12, 20910 (2022)",
+        doi: "https://doi.org/10.1038/s41598-022-24494-x"
+      },
+      targetPatientProfile: targetPatientProfile,
+      similarPatients: meaningfulSimilarities.slice(0, 20), // Top 20 for analysis
+      totalPatientsAnalyzed: allPatients.length,
+      patientsWithSufficientData: patientsWithSufficientData,
+      meaningfulSimilarities: meaningfulSimilarities.length,
+      recommendations: recommendations,
+      expectedPerformance: {
+        patientGroup: patientGroup,
+        expectedHitRatio: `${(expectedHitRatio * 100).toFixed(1)}%`,
+        expectedRecall: "94%",
+        expectedPrecision: "95%",
+        expectedMRR: "52%",
+        note: "Performance metrics from original study (100 test patients per group)"
+      },
+      methodology: {
+        step1: "Extract clinical profiles (12 normalized features)",
+        step2: "Calculate D3K similarity using learned Mahalanobis weights",
+        step3: "Map HbA1c trajectories to symbol sequences (N,A,U,D)",
+        step4: "Generate 6-grams from trajectory sequences",
+        step5: "Calculate trajectory similarity using cosine similarity",
+        step6: "Combine: T-D3K = 0.5×D3K + 0.5×Trajectory",
+        step7: "Rank similar patients and extract medication patterns",
+        step8: "Apply clinical guidelines for final recommendations"
+      }
     });
 
   } catch (error) {
-    console.error("Eroare la calcularea similarității:", error);
+    console.error("T-D3K Algorithm Error:", error);
     res.status(500).json({ 
-      message: "Eroare la calcularea similarității", 
-      error: error.message 
+      success: false,
+      message: "Error calculating patient similarity using T-D3K algorithm", 
+      error: error.message,
+      algorithm: "T-D3K (Nature 2022)",
+      reference: "Scientific Reports 12, 20910 (2022)"
+    });
+  }
+};
+
+/**
+ * Get latest blood glucose reading
+ */
+const getLatestBloodSugar = (patient) => {
+  if (!patient.dailyData || patient.dailyData.length === 0) return null;
+  
+  const sorted = [...patient.dailyData].sort((a, b) => 
+    new Date(b.date) - new Date(a.date)
+  );
+  return sorted[0].bloodGlucose || sorted[0].bloodSugar;
+};
+
+/**
+ * Batch evaluation for research purposes
+ * Evaluates T-D3K algorithm performance on patient groups
+ */
+const evaluateTD3KPerformance = async (req, res) => {
+  try {
+    const { patientGroup = 'DM', sampleSize = 100 } = req.body;
+    
+    console.log(`=== T-D3K Performance Evaluation ===`);
+    console.log(`Patient Group: ${patientGroup}`);
+    console.log(`Sample Size: ${sampleSize}`);
+    
+    const td3kAlgorithm = new EnhancedTD3KAlgorithm();
+    
+    // Get patients from specified group with suboptimal HbA1c (≥8%)
+    const groupFilter = {
+      'DM': { 
+        'analysisData.hasHyperlipidemia': { $ne: true },
+        'analysisData.hasHypertension': { $ne: true }
+      },
+      'DM_HLD': { 'analysisData.hasHyperlipidemia': true },
+      'DM_HTN': { 'analysisData.hasHypertension': true },
+      'DHL': { 
+        'analysisData.hasHyperlipidemia': true,
+        'analysisData.hasHypertension': true 
+      }
+    };
+    
+    const testPatients = await User.find({
+      ...groupFilter[patientGroup],
+      'analysisData.hemoglobinA1c': { $gte: 8.0 }
+    }).limit(sampleSize);
+    
+    if (testPatients.length === 0) {
+      return res.status(404).json({
+        message: `No patients found for group ${patientGroup} with HbA1c ≥ 8%`,
+        algorithm: "T-D3K Evaluation"
+      });
+    }
+    
+    const results = {
+      patientGroup: patientGroup,
+      totalTestPatients: testPatients.length,
+      hitRatios: [],
+      recalls: [],
+      precisions: [],
+      mrrs: [],
+      averageMetrics: {}
+    };
+    
+    // Evaluate each test patient
+    for (let i = 0; i < Math.min(testPatients.length, 10); i++) { // Limit for demo
+      const testPatient = testPatients[i];
+      const otherPatients = await User.find({ 
+        _id: { $ne: testPatient._id }
+      }).limit(100); // Limit database size for demo
+      
+      // Calculate similarities
+      const similarities = [];
+      for (const otherPatient of otherPatients) {
+        const similarity = td3kAlgorithm.calculateTD3KSimilarity(testPatient, otherPatient);
+        if (similarity > 0.1) {
+          similarities.push({
+            patient: otherPatient,
+            similarity: similarity
+          });
+        }
+      }
+      
+      similarities.sort((a, b) => b.similarity - a.similarity);
+      
+      // Generate recommendations
+      const recommendations = td3kAlgorithm.generateMedicationRecommendations(
+        similarities,
+        testPatient,
+        10
+      );
+      
+      // Extract actual medications (ground truth)
+      const actualMedications = td3kAlgorithm.extractPatientMedications({
+        currentMedication: testPatient.currentMedication
+      });
+      
+      // Calculate metrics
+      if (recommendations && recommendations.recommendations) {
+        const metrics = td3kAlgorithm.calculateEvaluationMetrics(
+          recommendations.recommendations,
+          actualMedications,
+          10
+        );
+        
+        results.hitRatios.push(metrics.hitRatio);
+        results.recalls.push(metrics.recall);
+        results.precisions.push(metrics.precision);
+        results.mrrs.push(metrics.mrr);
+      }
+    }
+    
+    // Calculate averages
+    if (results.hitRatios.length > 0) {
+      results.averageMetrics = {
+        hitRatio: (results.hitRatios.reduce((a, b) => a + b, 0) / results.hitRatios.length * 100).toFixed(1) + '%',
+        recall: (results.recalls.reduce((a, b) => a + b, 0) / results.recalls.length).toFixed(3),
+        precision: (results.precisions.reduce((a, b) => a + b, 0) / results.precisions.length).toFixed(3),
+        mrr: (results.mrrs.reduce((a, b) => a + b, 0) / results.mrrs.length).toFixed(3)
+      };
+    }
+    
+    // Expected results from paper
+    const expectedResults = {
+      'DM': { hitRatio: '81%', recall: '0.95', precision: '0.95', mrr: '0.55' },
+      'DM_HLD': { hitRatio: '84%', recall: '0.94', precision: '0.95', mrr: '0.53' },
+      'DM_HTN': { hitRatio: '78%', recall: '0.93', precision: '0.95', mrr: '0.53' },
+      'DHL': { hitRatio: '75%', recall: '0.94', precision: '0.96', mrr: '0.45' }
+    };
+    
+    res.status(200).json({
+      success: true,
+      message: "T-D3K Algorithm performance evaluation completed",
+      algorithm: "T-D3K (Nature 2022)",
+      reference: "Scientific Reports 12, 20910 (2022)",
+      results: results,
+      expectedFromPaper: expectedResults[patientGroup],
+      note: "This is a limited evaluation for demonstration. Full evaluation requires larger dataset and extended computation time.",
+      methodology: "Conform Figure 1-4 from the original paper"
+    });
+    
+  } catch (error) {
+    console.error("T-D3K Evaluation Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error evaluating T-D3K algorithm performance",
+      error: error.message
     });
   }
 };
 
 module.exports = {
   calculatePatientSimilarity,
-  EnhancedPatientSimilarityCalculator
+  evaluateTD3KPerformance,
+  EnhancedTD3KAlgorithm
 };

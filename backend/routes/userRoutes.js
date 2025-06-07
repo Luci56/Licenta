@@ -5,7 +5,7 @@ const router = express.Router();
 
 // Înregistrare utilizator
 router.post("/register", async (req, res) => {
-  const { email, password, birthYear, gender, height, diagnosisYear } = req.body;
+  const { email, password, birthYear, gender, height, weight, diagnosisYear } = req.body;
 
   try {
     // Creăm un nou utilizator
@@ -15,12 +15,15 @@ router.post("/register", async (req, res) => {
       birthYear,
       gender,
       height,
+      weight,
       diagnosisYear,
       dailyData: [],
       analysisData: [],
     });
 
+        console.log("User înainte de salvare:", user); 
     await user.save();
+    console.log("User salvat cu succes!");
     res.status(201).json({ message: "Utilizator înregistrat cu succes!" });
   } catch (err) {
     console.error("Eroare la înregistrare:", err);
