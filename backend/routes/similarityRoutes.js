@@ -3,7 +3,6 @@ const { calculatePatientSimilarity } = require("../controllers/similarityControl
 
 const router = express.Router();
 
-// Rută pentru calculul similarității
 router.get("/calculate/:userId", calculatePatientSimilarity);
 
 module.exports = router;

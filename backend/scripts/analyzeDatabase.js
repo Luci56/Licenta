@@ -1,10 +1,18 @@
-// scripts/analyzeDatabase.js
+
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const User = require('../models/User');
 
 dotenv.config();
-
+/**
+ * Stabileste conexiunea cu baza de date MongoDB.
+ * Utilizeaza configuratiile din variabilele de mediu pentru conectare.
+ * 
+ * @async
+ * @function connectDB
+ * @returns {Promise<void>} Promise care se rezolva la conectarea cu succes
+ * @throws {Error} Opreste executia daca conexiunea esueaza
+ */
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGO_URI, {
@@ -22,11 +30,10 @@ const analyzeDatabase = async () => {
   try {
     console.log('📊 Analyzing diabetes patient database...\n');
 
-    // Basic statistics
     const totalPatients = await User.countDocuments();
     console.log(`👥 Total Patients: ${totalPatients}`);
 
-    // Age distribution
+   
     const currentYear = new Date().getFullYear();
     const ageStats = await User.aggregate([
       {
@@ -50,7 +57,7 @@ const analyzeDatabase = async () => {
       console.log(`   Age Range: ${ageStats[0].minAge} - ${ageStats[0].maxAge} years`);
     }
 
-    // Gender distribution
+    
     const genderStats = await User.aggregate([
       {
         $group: {
@@ -66,7 +73,7 @@ const analyzeDatabase = async () => {
       console.log(`   ${stat._id}: ${stat.count} (${percentage}%)`);
     });
 
-    // HbA1c distribution
+    
     const hba1cStats = await User.aggregate([
       {
         $project: {
@@ -103,7 +110,7 @@ const analyzeDatabase = async () => {
       console.log(`   Poorly Controlled (≥9.0%): ${stats.poorControlCount} (${((stats.poorControlCount/totalPatients)*100).toFixed(1)}%)`);
     }
 
-    // Medication usage statistics
+    
     const medicationStats = await User.aggregate([
       {
         $group: {
@@ -141,7 +148,7 @@ const analyzeDatabase = async () => {
       console.log(`   Gliclazide: ${stats.gliclazideUsers} (${((stats.gliclazideUsers/totalPatients)*100).toFixed(1)}%)`);
     }
 
-    // Comorbidity statistics
+    
     const comorbidityStats = await User.aggregate([
       {
         $project: {
@@ -174,7 +181,7 @@ const analyzeDatabase = async () => {
       console.log(`   Neuropathy: ${stats.neuropathy} (${((stats.neuropathy/totalPatients)*100).toFixed(1)}%)`);
     }
 
-    // Disease duration statistics
+    
     const durationStats = await User.aggregate([
       {
         $project: {
@@ -203,7 +210,7 @@ const analyzeDatabase = async () => {
       console.log(`   Range: ${stats.minDuration} - ${stats.maxDuration} years`);
     }
 
-    // Medication complexity analysis
+    
     const complexityStats = await User.aggregate([
       {
         $project: {
@@ -239,7 +246,7 @@ const analyzeDatabase = async () => {
       console.log(`   ${stat._id} medication${stat._id !== 1 ? 's' : ''}: ${stat.count} patients (${percentage}%)`);
     });
 
-    // Treatment goal achievement
+    
     const goalStats = await User.aggregate([
       {
         $project: {
@@ -273,11 +280,11 @@ const analyzeDatabase = async () => {
     if (goalStats.length > 0) {
       const stats = goalStats[0];
       const achievementRate = ((stats.achievedGoals / stats.totalWithGoals) * 100).toFixed(1);
-      console.log(`\n🎯 Treatment Goal Achievement:`);
+      console.log(`\n Treatment Goal Achievement:`);
       console.log(`   Patients at/near target: ${stats.achievedGoals}/${stats.totalWithGoals} (${achievementRate}%)`);
     }
 
-    // Sample patient examples
+    
     console.log(`\n👤 Sample Patient Profiles:`);
     const samplePatients = await User.find({})
       .limit(3)
@@ -293,7 +300,7 @@ const analyzeDatabase = async () => {
       console.log(`   Patient ${index + 1}: Age ${age}, HbA1c ${hba1c}%, Metformin: ${hasMetformin ? 'Yes' : 'No'}, Insulin: ${hasInsulin ? 'Yes' : 'No'}`);
     });
 
-    console.log(`\n✅ Database analysis complete!`);
+    console.log(`\n Database analysis complete!`);
     console.log(`\n🔗 API Endpoints Available:`);
     console.log(`   GET /api/similarity/calculate/:userId - Calculate patient similarity`);
     console.log(`   GET /api/medication/recommendations/:userId - Get medication recommendations`);
@@ -301,7 +308,7 @@ const analyzeDatabase = async () => {
     console.log(`   GET /api/users/:userId - Get user details`);
 
   } catch (error) {
-    console.error('❌ Error analyzing database:', error);
+    console.error(' Error analyzing database:', error);
   } finally {
     mongoose.connection.close();
   }
@@ -313,7 +320,7 @@ const main = async () => {
     await analyzeDatabase();
     process.exit(0);
   } catch (error) {
-    console.error('❌ Script failed:', error);
+    console.error(' Script failed:', error);
     process.exit(1);
   }
 };

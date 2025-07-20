@@ -4,15 +4,22 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js",
-    "start": "node server.js",
-    "populate:small": "node scripts/populateDatabase.js 50",
-    "populate:medium": "node scripts/populateDatabase.js 100",
-    "populate:large": "node scripts/populateDatabase.js 500",
-    "analyze:database": "node scripts/analyzeDatabase.js",
-    "clear:database": "node scripts/clearDatabase.js"
-  },
+  "dev": "nodemon server.js",
+  "start": "node server.js", 
+  "populate:small": "node scripts/populateDatabase.js 50",
+  "populate:medium": "node scripts/populateDatabase.js 100",
+  "populate:large": "node scripts/populateDatabase.js 500",
+  "analyze:database": "node scripts/analyzeDatabase.js",
+  "clear:database": "node scripts/clearDatabase.js",
+  "test": "jest",
+ "test": "jest tests/",
+"test:watch": "jest tests/ --watch",
+"test:coverage": "jest tests/ --coverage"
+},
+"jest": {
+  "testEnvironment": "node",
+  "verbose": true
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -23,6 +30,12 @@
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "mathjs": "^14.0.0",
-    "mongoose": "^8.9.5"
+    "mongoose": "^8.15.1"
+  },
+  "devDependencies": {
+    "jest": "^30.0.0",
+    "supertest": "^7.1.1"
   }
 }
+
+

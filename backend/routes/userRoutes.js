@@ -3,7 +3,22 @@ const User = require("../models/User");
 
 const router = express.Router();
 
-// Înregistrare utilizator
+/**
+ * Endpoint pentru inregistrarea unui nou pacient in sistem.
+ * Creeaza un cont nou cu informatiile personale si medicale de baza.
+ * 
+ * @route POST /api/users/register
+ * @param {Object} req.body - Datele necesare pentru inregistrare
+ * @param {string} req.body.email - Adresa de email unica a pacientului
+ * @param {string} req.body.password - Parola pentru securizarea contului
+ * @param {number} req.body.birthYear - Anul nasterii pacientului
+ * @param {string} req.body.gender - Genul pacientului (Masculin/Feminin)
+ * @param {number} req.body.height - Inaltimea in centimetri
+ * @param {number} req.body.weight - Greutatea in kilograme
+ * @param {number} req.body.diagnosisYear - Anul diagnosticarii diabetului
+ * @returns {Object} Mesaj de confirmare sau eroare
+ * @throws {Error} 400 - Eroare de validare sau email existent
+ */
 router.post("/register", async (req, res) => {
   const { email, password, birthYear, gender, height, weight, diagnosisYear } = req.body;
 
@@ -31,7 +46,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Salvare glicemie zilnică - CORECTATĂ
+// Salvare glicemie zilnică 
 router.post("/add-daily-data/:id", async (req, res) => {
   const { id } = req.params;
   // Acceptăm atât bloodGlucose cât și bloodSugar pentru compatibilitate
@@ -56,7 +71,6 @@ router.post("/add-daily-data/:id", async (req, res) => {
       bloodGlucose: Number(bloodGlucose)
     });
 
-    // Marcare explicită a modificării
     user.markModified("dailyData");
 
     // Salvăm utilizatorul actualizat
@@ -69,7 +83,25 @@ router.post("/add-daily-data/:id", async (req, res) => {
   }
 });
 
-// Salvare date analiză - CORECTATĂ
+/**
+ * Endpoint pentru adaugarea rezultatelor analizelor medicale periodice.
+ * Salveaza rezultatele analizelor de laborator pentru monitorizarea progresiei diabetului.
+ * 
+ * @route POST /api/users/add-analysis-data/:id
+ * @param {string} req.params.id - ID-ul utilizatorului
+ * @param {Object} req.body - Rezultatele analizelor
+ * @param {number} req.body.systolicPressure - Tensiunea arteriala sistolica
+ * @param {number} req.body.diastolicPressure - Tensiunea arteriala diastolica
+ * @param {number} req.body.cholesterolHDL - Colesterolul HDL (mg/dL)
+ * @param {number} req.body.cholesterolLDL - Colesterolul LDL (mg/dL)
+ * @param {number} req.body.hemoglobinA1c - Hemoglobina glicata (%)
+ * @param {boolean} req.body.hasHyperlipidemia - Prezenta hiperlipidemiei
+ * @param {boolean} req.body.hasHypertension - Prezenta hipertensiunii
+ * @param {number} req.body.diseaseDuration - Durata bolii in ani
+ * @returns {Object} Mesaj de confirmare sau eroare
+ * @throws {Error} 404 - Utilizatorul nu a fost gasit
+ * @throws {Error} 400 - Eroare de validare a datelor
+ */
 router.post("/add-analysis-data/:id", async (req, res) => {
   const { id } = req.params;
   const { 
@@ -125,7 +157,19 @@ router.post("/add-analysis-data/:id", async (req, res) => {
   }
 });
 
-// Login utilizator
+/**
+ * Endpoint pentru autentificarea pacientilor in sistem.
+ * Verifica credentialele si returneaza datele utilizatorului pentru sesiune.
+ * 
+ * @route POST /api/users/login
+ * @param {Object} req.body - Credentialele de autentificare
+ * @param {string} req.body.email - Adresa de email a pacientului
+ * @param {string} req.body.password - Parola contului
+ * @returns {Object} Mesaj de succes si datele utilizatorului
+ * @throws {Error} 404 - Utilizatorul nu exista
+ * @throws {Error} 401 - Parola incorecta
+ * @throws {Error} 500 - Eroare de server
+ */
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -146,7 +190,16 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Obținere date utilizator
+/**
+ * Endpoint pentru obtinerea datelor complete ale unui pacient.
+ * Returneaza profilul complet cu toate informatiile medicale si istoricul.
+ * 
+ * @route GET /api/users/:id
+ * @param {string} req.params.id - ID-ul utilizatorului
+ * @returns {Object} Datele complete ale utilizatorului
+ * @throws {Error} 404 - Utilizatorul nu a fost gasit
+ * @throws {Error} 400 - Eroare la obtinerea datelor
+ */
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
 
@@ -167,6 +220,57 @@ router.get("/:id", async (req, res) => {
   } catch (err) {
     console.error("Eroare la obținerea datelor utilizatorului:", err);
     res.status(400).json({ message: "Eroare la obținerea datelor: " + err.message });
+  }
+});
+
+/**
+ * Endpoint pentru actualizarea profilului personal al pacientului.
+ * Permite modificarea informatiilor antropometrice (greutate, inaltime).
+ * 
+ * @route PUT /api/users/update-profile/:id
+ * @param {string} req.params.id - ID-ul utilizatorului
+ * @param {Object} req.body - Datele pentru actualizare
+ * @param {number} req.body.weight - Greutatea noua in kilograme (30-200 kg)
+ * @param {number} req.body.height - Inaltimea noua in centimetri (100-250 cm)
+ * @returns {Object} Mesaj de confirmare si datele actualizate
+ */
+router.put("/update-profile/:id", async (req, res) => {
+  const { id } = req.params;
+  const { weight, height } = req.body;
+
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "Utilizatorul nu a fost găsit!" });
+    }
+
+    // Validează datele
+    if (weight && (weight < 30 || weight > 200)) {
+      return res.status(400).json({ message: "Greutatea trebuie să fie între 30 și 200 kg!" });
+    }
+
+    if (height && (height < 100 || height > 250)) {
+      return res.status(400).json({ message: "Înălțimea trebuie să fie între 100 și 250 cm!" });
+    }
+
+    // Actualizează doar câmpurile furnizate
+    const updateData = {};
+    if (weight !== undefined) updateData.weight = weight;
+    if (height !== undefined) updateData.height = height;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({ 
+      message: "Profilul a fost actualizat cu succes!",
+      user: updatedUser
+    });
+  } catch (err) {
+    console.error("Eroare la actualizarea profilului:", err);
+    res.status(400).json({ message: "Eroare la actualizarea profilului: " + err.message });
   }
 });
 

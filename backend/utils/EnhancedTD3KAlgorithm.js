@@ -1,25 +1,31 @@
 /**
- * Enhanced Patient Similarity Calculator - 100% Conform Articol Nature 2022
+ * Algoritm avansat T-D3K pentru calculul similaritatii pacientilor diabetici.
+ * Implementeaza algoritmul conform articolului Nature 2022:
  * "Diabetes medication recommendation system using patient similarity analytics"
- * Scientific Reports 12, 20910 (2022)
- * https://doi.org/10.1038/s41598-022-24494-x
+ * Scientific Reports 12, 20910 (2022) - https://doi.org/10.1038/s41598-022-24494-x
+ * 
+ * Combina similaritatea clinica D3K cu analiza traiectoriei temporale HbA1c
+ * pentru recomandari de medicatie personalizate si precise.
+ * 
+ * @author Echipa DiabetCare
+ * @version 1.0
+ * @reference Scientific Reports 12, 20910 (2022)
  */
 
 class EnhancedTD3KAlgorithm {
   constructor() {
-    // Exact ranges conform articolului (Table 1)
     this.clinicalRanges = {
       age: { min: 21, max: 100 },
       systolicBP: { min: 80, max: 250 },
       diastolicBP: { min: 50, max: 150 },
-      cholesterolHDL: { min: 0.5, max: 3.0 }, // mmol/L conform articol
-      cholesterolLDL: { min: 1.0, max: 5.0 }, // mmol/L conform articol
-      triglycerides: { min: 0.5, max: 10.0 }, // mmol/L conform articol
+      cholesterolHDL: { min: 0.5, max: 3.0 }, 
+      cholesterolLDL: { min: 1.0, max: 5.0 }, 
+      triglycerides: { min: 0.5, max: 10.0 }, 
       hba1c: { min: 4.0, max: 15.0 },
       diseaseDuration: { min: 0, max: 30 }
     };
 
-    // D3K weights conform articolului - învățate prin Mahalanobis distance learning
+    
     this.d3kWeights = {
       age: 0.0821,
       gender: 0.0543,
@@ -28,21 +34,25 @@ class EnhancedTD3KAlgorithm {
       cholesterolHDL: 0.1045,
       cholesterolLDL: 0.1034,
       triglycerides: 0.0812,
-      hba1c: 0.2456, // Highest weight conform articolului
+      hba1c: 0.2456, 
       hasHLD: 0.0634,
       hasHTN: 0.0587,
       diseaseDuration: 0.1134,
       medicationCount: 0.0771
     };
 
-    // Trajectory parameters conform articolului
-    this.trajectoryThreshold = 0.5; // τ threshold pentru HbA1c difference
-    this.normalHbA1cRange = { min: 4.0, max: 7.0 }; // Normal range conform CPG
-    this.nGramSize = 6; // n=6 conform articolului
-    this.alpha = 0.5; // Weight pentru D3K component
-    this.beta = 0.5;  // Weight pentru Trajectory component
+    
+    this.trajectoryThreshold = 0.5; 
+    this.normalHbA1cRange = { min: 4.0, max: 7.0 }; 
+    this.nGramSize = 6; 
+    this.alpha = 0.5; 
+    this.beta = 0.5;  
 
-    // Medication classes conform Supplementary Table S1
+    /**
+     * Clasele de medicamente diabetice conform Tabelului Suplementar S1.
+     * Include toate medicamentele folosite in studiu cu dozele maxime
+     * si nivelurile de intensitate (L=Low, M=Medium, H=High).
+     */
     this.dmMedicationClasses = {
       // Biguanides
       'metformin': { 
@@ -170,9 +180,7 @@ class EnhancedTD3KAlgorithm {
     return Math.max(0, Math.min(1, (value - min) / (max - min)));
   }
 
-  /**
-   * Convert mg/dL to mmol/L pentru cholesterol și triglyceride
-   */
+  
   convertToMmolL(valueInMgDl, type) {
     const conversionFactors = {
       cholesterol: 0.02586, // mg/dL to mmol/L
@@ -181,15 +189,13 @@ class EnhancedTD3KAlgorithm {
     return valueInMgDl * conversionFactors[type];
   }
 
-  /**
-   * Extract clinical profile vector conform articolului
-   */
+  
   extractClinicalProfile(patient, analysisData) {
     const currentYear = new Date().getFullYear();
     const age = currentYear - patient.birthYear;
     const gender = patient.gender === "Masculin" ? 1 : 0;
     
-    // Convert cholesterol values to mmol/L if needed
+   
     const hdlMmol = analysisData.cholesterolHDL > 10 
       ? this.convertToMmolL(analysisData.cholesterolHDL, 'cholesterol')
       : analysisData.cholesterolHDL || 1.2;
@@ -232,13 +238,17 @@ class EnhancedTD3KAlgorithm {
         this.clinicalRanges.diseaseDuration.min, 
         this.clinicalRanges.diseaseDuration.max
       ),
-      this.normalizeValue(medicationCount, 0, 6) // max 6 DM medication classes
+      this.normalizeValue(medicationCount, 0, 6) 
     ];
   }
 
   /**
-   * Count DM medications conform articolului
-   */
+ * Calculeaza numarul de medicamente diabetice prescrise conform articolului.
+ * Numara doar medicamentele din clasele DM definite in studiu.
+ * 
+ * @param {Object} currentMedication - Obiectul cu medicamentele curente
+ * @returns {number} Numarul medicamentelor DM prescrise (0-6)
+ */
   getDMMedicationCount(currentMedication) {
     if (!currentMedication) return 0;
     
@@ -253,9 +263,17 @@ class EnhancedTD3KAlgorithm {
   }
 
   /**
-   * D3K similarity calculation conform articolului
-   * Using generalized Mahalanobis distance with learned weights
-   */
+ * Calculeaza similaritatea D3K folosind distanta Mahalanobis generalizata.
+ * Implementeaza formula exacta din articol cu greutatile invatate.
+ * 
+ * @param {Array} profile1 - Profilul clinic primul pacient (vector normalizat)
+ * @param {Array} profile2 - Profilul clinic al doilea pacient (vector normalizat)
+ * @returns {number} Scorul de similaritate D3K intre 0 si 1
+ * @throws {Error} Daca vectorii nu au aceeasi lungime
+ * 
+ * Formula: exp(-sqrt(sum(w_i * (x1_i - x2_i)^2)))
+ * unde w_i sunt greutatile invatate pentru fiecare caracteristica
+ */
   calculateD3KSimilarity(profile1, profile2) {
     if (profile1.length !== profile2.length) {
       throw new Error("Profile vectors must have the same length");
@@ -271,17 +289,27 @@ class EnhancedTD3KAlgorithm {
     
     const mahalanobisDistance = Math.sqrt(weightedDistance);
     
-    // Convert distance to similarity using exponential kernel
+    
     return Math.exp(-mahalanobisDistance);
   }
 
   /**
-   * HbA1c trajectory mapping conform articolului
-   * Cases: N (Normal), A (Abnormal), U (Uptrend), D (Downtrend)
-   */
+ * Mapeaza traiectoria HbA1c in categorii discrete conform articolului.
+ * Analizeaza evolutia temporala a HbA1c si o clasifica in tipare.
+ * 
+ * @param {Array} hba1cValues - Valorile HbA1c ordonate cronologic
+ * @returns {string} Tiparul traiectoriei: "N"(Normal), "A"(Abnormal), 
+ *                   "U"(Uptrend), "D"(Downtrend) sau combinatii
+ * 
+ * Algoritm:
+ * - N: diferenta <= 0.5% (threshold τ)
+ * - A: diferenta > 0.5%
+ * - U: trend crescator sustinut
+ * - D: trend descrescator sustinut
+ */
   mapHbA1cTrajectory(hba1cValues) {
     if (!hba1cValues || hba1cValues.length < 2) {
-      return "N"; // Default for insufficient data
+      return "N"; 
     }
 
     let trajectory = "";
@@ -292,18 +320,18 @@ class EnhancedTD3KAlgorithm {
       const difference = Math.abs(v2 - v1);
       
       if (difference <= this.trajectoryThreshold) {
-        // Case 1: Difference ≤ τ
+        
         if (v1 >= this.normalHbA1cRange.min && v1 <= this.normalHbA1cRange.max) {
-          trajectory += "N"; // Normal
+          trajectory += "N"; 
         } else {
-          trajectory += "A"; // Abnormal
+          trajectory += "A"; 
         }
       } else {
-        // Case 2: Difference > τ
+        
         if (v2 > v1) {
-          trajectory += "U"; // Uptrend
+          trajectory += "U"; 
         } else {
-          trajectory += "D"; // Downtrend
+          trajectory += "D"; 
         }
       }
     }
@@ -311,9 +339,7 @@ class EnhancedTD3KAlgorithm {
     return trajectory;
   }
 
-  /**
-   * Generate n-grams conform articolului (n=6)
-   */
+  
   generateNGrams(trajectory, n = this.nGramSize) {
     if (!trajectory || trajectory.length === 0) return [];
     if (trajectory.length < n) return [trajectory];
@@ -326,8 +352,18 @@ class EnhancedTD3KAlgorithm {
   }
 
   /**
-   * Trajectory similarity using cosine similarity conform articolului
-   */
+ * Calculeaza similaritatea traiectoriei folosind n-grame si cosinus.
+ * Implementeaza algoritmul de comparare a tiparelor temporale HbA1c.
+ * 
+ * @param {string} trajectory1 - Tiparul traiectoriei primul pacient
+ * @param {string} trajectory2 - Tiparul traiectoriei al doilea pacient
+ * @returns {number} Scorul de similaritate a traiectoriei intre 0 si 1
+ * 
+ * Metoda:
+ * 1. Genereaza n-grame (n=6) din fiecare traiectorie
+ * 2. Creeaza vectori de frecventa pentru n-grame
+ * 3. Calculeaza similaritatea cosinus intre vectori
+ */
   calculateTrajectorySimilarity(trajectory1, trajectory2) {
     const nGrams1 = this.generateNGrams(trajectory1);
     const nGrams2 = this.generateNGrams(trajectory2);
@@ -335,11 +371,11 @@ class EnhancedTD3KAlgorithm {
     if (nGrams1.length === 0 && nGrams2.length === 0) return 1.0;
     if (nGrams1.length === 0 || nGrams2.length === 0) return 0.0;
     
-    // Create vocabulary of all unique n-grams
+    
     const allNGrams = new Set([...nGrams1, ...nGrams2]);
     const vocabulary = Array.from(allNGrams);
     
-    // Create frequency vectors
+    
     const vector1 = vocabulary.map(ngram => 
       nGrams1.filter(t => t === ngram).length
     );
@@ -347,7 +383,7 @@ class EnhancedTD3KAlgorithm {
       nGrams2.filter(t => t === ngram).length
     );
     
-    // Calculate cosine similarity
+    
     const dotProduct = vector1.reduce((sum, v1, i) => sum + v1 * vector2[i], 0);
     const magnitude1 = Math.sqrt(vector1.reduce((sum, v) => sum + v * v, 0));
     const magnitude2 = Math.sqrt(vector2.reduce((sum, v) => sum + v * v, 0));
@@ -357,9 +393,7 @@ class EnhancedTD3KAlgorithm {
     return dotProduct / (magnitude1 * magnitude2);
   }
 
-  /**
-   * T-D3K similarity calculation conform articolului
-   */
+  
   calculateTD3KSimilarity(currentPatient, otherPatient) {
     const currentAnalysis = this.getLatestAnalysisData(currentPatient);
     const otherAnalysis = this.getLatestAnalysisData(otherPatient);
@@ -368,16 +402,16 @@ class EnhancedTD3KAlgorithm {
       return 0.0;
     }
 
-    // Calculate D3K similarity
+    
     const currentProfile = this.extractClinicalProfile(currentPatient, currentAnalysis);
     const otherProfile = this.extractClinicalProfile(otherPatient, otherAnalysis);
     const d3kSimilarity = this.calculateD3KSimilarity(currentProfile, otherProfile);
 
-    // Calculate trajectory similarity
+    
     const currentHbA1cValues = this.extractHbA1cTrajectory(currentPatient);
     const otherHbA1cValues = this.extractHbA1cTrajectory(otherPatient);
     
-    let trajectorySimilarity = 0.5; // Default for insufficient data
+    let trajectorySimilarity = 0.5; 
     
     if (currentHbA1cValues.length >= 2 && otherHbA1cValues.length >= 2) {
       const currentTrajectory = this.mapHbA1cTrajectory(currentHbA1cValues);
@@ -389,13 +423,11 @@ class EnhancedTD3KAlgorithm {
       );
     }
 
-    // Combine using equal weights conform articolului
+    
     return this.alpha * d3kSimilarity + this.beta * trajectorySimilarity;
   }
 
-  /**
-   * Extract HbA1c trajectory from patient data
-   */
+  
   extractHbA1cTrajectory(patient) {
     if (!patient.analysisData || !Array.isArray(patient.analysisData)) {
       return [];
@@ -407,9 +439,7 @@ class EnhancedTD3KAlgorithm {
       .map(data => data.hemoglobinA1c);
   }
 
-  /**
-   * Get latest analysis data
-   */
+  
   getLatestAnalysisData(patient) {
     if (!patient.analysisData) return null;
     
@@ -424,9 +454,19 @@ class EnhancedTD3KAlgorithm {
     }
   }
 
-  /**
-   * Classify patient into groups conform articolului
-   */
+ /**
+ * Clasifica pacientul in grupe conform articolului.
+ * Determina categoria bazata pe comorbiditati pentru recomandari tintite.
+ * 
+ * @param {Object} analysisData - Datele de analiza pentru clasificare
+ * @returns {string} Grupa pacientului: "DM", "DM_HLD", "DM_HTN", "DHL"
+ * 
+ * Clasificare:
+ * - DM: doar diabet
+ * - DM_HLD: diabet + hiperlipidemia  
+ * - DM_HTN: diabet + hipertensiune
+ * - DHL: diabet + hiperlipidemia + hipertensiune
+ */
   classifyPatientGroup(analysisData) {
     const hasHLD = analysisData.hasHyperlipidemia || false;
     const hasHTN = analysisData.hasHypertension || false;
@@ -437,9 +477,7 @@ class EnhancedTD3KAlgorithm {
     return 'DM';                        // Diabetes only
   }
 
-  /**
-   * Generate medication recommendations based on similar patients
-   */
+  
   generateMedicationRecommendations(similarPatients, targetPatient, k = 10) {
     if (!similarPatients || similarPatients.length === 0) {
       return null;
@@ -451,13 +489,13 @@ class EnhancedTD3KAlgorithm {
     const patientGroup = this.classifyPatientGroup(targetAnalysis);
     const targetHbA1c = targetAnalysis.hemoglobinA1c;
     
-    // Get top K similar patients
+    
     const topSimilarPatients = similarPatients.slice(0, k);
     
-    // Extract medication patterns from similar patients
+    
     const medicationCandidates = this.extractMedicationCandidates(topSimilarPatients);
     
-    // Rank recommendations based on frequency and similarity scores
+    
     const rankedRecommendations = this.rankMedicationRecommendations(
       medicationCandidates, 
       targetPatient,
@@ -477,8 +515,12 @@ class EnhancedTD3KAlgorithm {
   }
 
   /**
-   * Extract medication candidates from similar patients
-   */
+ * Extrage candidatii de medicatie din pacientii similari.
+ * Agrrega medicamentele utilizate cu frecventele si scorurile de similaritate.
+ * 
+ * @param {Array} similarPatients - Lista pacientilor similari
+ * @returns {Array} Lista candidatilor de medicatie cu metrici
+ */
   extractMedicationCandidates(similarPatients) {
     const candidates = new Map();
     
@@ -507,8 +549,12 @@ class EnhancedTD3KAlgorithm {
   }
 
   /**
-   * Extract medications from a patient
-   */
+ * Extrage medicamentele prescrise unui pacient individual.
+ * Converteste schema de medicatie in format standardizat.
+ * 
+ * @param {Object} patient - Pacientul pentru extragerea medicamentelor
+ * @returns {Array} Lista medicamentelor prescrise cu detalii
+ */
   extractPatientMedications(patient) {
     const medications = [];
     const currentMedication = patient.user?.currentMedication || patient.currentMedication;
@@ -532,11 +578,9 @@ class EnhancedTD3KAlgorithm {
     return medications;
   }
 
-  /**
-   * Rank medication recommendations
-   */
+  
   rankMedicationRecommendations(candidates, targetPatient, targetHbA1c, patientGroup) {
-    // Sort by frequency and average similarity
+    
     candidates.forEach(candidate => {
       candidate.averageSimilarity = candidate.totalSimilarity / candidate.count;
       candidate.score = candidate.count * 0.7 + candidate.averageSimilarity * 0.3;
@@ -544,23 +588,21 @@ class EnhancedTD3KAlgorithm {
     
     candidates.sort((a, b) => b.score - a.score);
     
-    // Apply clinical guidelines
+    
     const recommendations = this.applyClinicalGuidelines(
       candidates, 
       targetHbA1c, 
       patientGroup
     );
     
-    return recommendations.slice(0, 10); // Top 10 recommendations
+    return recommendations.slice(0, 10); 
   }
 
-  /**
-   * Apply clinical guidelines for medication selection
-   */
+  
   applyClinicalGuidelines(candidates, targetHbA1c, patientGroup) {
     const recommendations = [];
     
-    // First-line: Metformin (if not contraindicated)
+    
     const metforminCandidates = candidates.filter(c => c.medication === 'metformin');
     if (metforminCandidates.length > 0) {
       recommendations.push({
@@ -571,7 +613,7 @@ class EnhancedTD3KAlgorithm {
       });
     }
     
-    // Second-line based on patient group and HbA1c
+    
     const secondLinePreferences = this.getSecondLinePreferences(patientGroup, targetHbA1c);
     
     secondLinePreferences.forEach(prefMed => {
@@ -588,7 +630,7 @@ class EnhancedTD3KAlgorithm {
       }
     });
     
-    // Add other candidates
+    
     candidates.forEach(candidate => {
       if (!recommendations.find(r => r.medication === candidate.medication)) {
         recommendations.push({
@@ -603,9 +645,7 @@ class EnhancedTD3KAlgorithm {
     return recommendations;
   }
 
-  /**
-   * Get second-line medication preferences based on patient group
-   */
+ 
   getSecondLinePreferences(patientGroup, hba1c) {
     const preferences = {
       'DM': ['sitagliptin', 'empagliflozin', 'gliclazide'],
@@ -614,7 +654,7 @@ class EnhancedTD3KAlgorithm {
       'DHL': ['empagliflozin', 'dapagliflozin']
     };
     
-    // Insulin consideration for severe hyperglycemia
+   
     if (hba1c >= 10.0) {
       preferences[patientGroup].unshift('insulin');
     }
@@ -622,9 +662,7 @@ class EnhancedTD3KAlgorithm {
     return preferences[patientGroup] || preferences['DM'];
   }
 
-  /**
-   * Get rationale for second-line medication
-   */
+  
   getSecondLineRationale(medication, patientGroup) {
     const rationales = {
       'empagliflozin': 'SGLT-2 inhibitor with cardiovascular benefits',
@@ -638,9 +676,7 @@ class EnhancedTD3KAlgorithm {
     return rationales[medication] || 'Based on similar patient outcomes';
   }
 
-  /**
-   * Get HbA1c status classification
-   */
+ 
   getHbA1cStatus(hba1c) {
     if (hba1c < 7.0) return 'Well-controlled';
     if (hba1c < 8.0) return 'Moderately controlled';
@@ -648,11 +684,9 @@ class EnhancedTD3KAlgorithm {
     return 'Poor control';
   }
 
-  /**
-   * Calculate evaluation metrics conform articolului
-   */
+  
   calculateEvaluationMetrics(recommendations, actualMedications, k = 10) {
-    // Hit ratio: percentage of patients with at least one exact match
+   
     const hasExactMatch = recommendations.some(rec => 
       actualMedications.some(actual => 
         actual.medication === rec.medication && 
@@ -662,7 +696,7 @@ class EnhancedTD3KAlgorithm {
     
     const hitRatio = hasExactMatch ? 1 : 0;
     
-    // Recall@K and Precision@K
+   
     const matches = recommendations.filter(rec => 
       actualMedications.some(actual => actual.medication === rec.medication)
     );
@@ -670,7 +704,7 @@ class EnhancedTD3KAlgorithm {
     const recall = actualMedications.length > 0 ? matches.length / actualMedications.length : 0;
     const precision = recommendations.length > 0 ? matches.length / recommendations.length : 0;
     
-    // Mean Reciprocal Rank (MRR)
+    
     let mrr = 0;
     for (let i = 0; i < recommendations.length; i++) {
       if (actualMedications.some(actual => actual.medication === recommendations[i].medication)) {

@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 
-// Define schema for chat messages
+/**
+ * Schema Mongoose pentru istoricul de chat al utilizatorilor.
+ * Stocheaza toate mesajele dintr-o conversatie organizate pe utilizator.
+ * Include validari pentru tipurile de mesaje si timestamp-uri automate.
+ */
 const chatLogSchema = mongoose.Schema(
   {
     userId: {
@@ -31,11 +35,10 @@ const chatLogSchema = mongoose.Schema(
     ],
   },
   {
-    timestamps: true, // Adds createdAt and updatedAt automatically
+    timestamps: true, 
   }
 );
 
-// Create the ChatLog model
 const ChatLog = mongoose.model("ChatLog", chatLogSchema);
 
 module.exports = ChatLog;

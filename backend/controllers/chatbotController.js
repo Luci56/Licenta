@@ -3,17 +3,23 @@ const ChatLog = require('../models/ChatLog');
 const User = require('../models/User');
 const enhancedFallbackService = require('../services/fallbackChatService');
 
-// Load environment variables for OpenAI API key
+
 require('dotenv').config();
 
-// Configure OpenAI API
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
-// Flag to control whether to use OpenAI API or fallback service
+
 const USE_OPENAI = process.env.USE_OPENAI !== 'false';
 
-// Get or create chat history for a user
+/**
+ * Obține sau creează istoricul conversației pentru un utilizator
+ * Validează existența utilizatorului și returnează mesajele salvate
+ * @param {Request} req - Obiectul request Express cu userId în params
+ * @param {Response} res - Obiectul response Express pentru răspuns
+ * @returns {Promise<void>} - Răspuns JSON cu istoricul mesajelor
+ */
 const getChatHistory = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -44,7 +50,14 @@ const getChatHistory = async (req, res) => {
   }
 };
 
-// Process a new message and get AI response
+/**
+ * Procesează un mesaj nou de la utilizator și generează răspuns AI
+ * Folosește baza de cunoștințe locală cu context, apoi OpenAI ca fallback
+ * Salvează atât mesajul utilizatorului cât și răspunsul bot-ului în istoric
+ * @param {Request} req - Request cu userId și message în body
+ * @param {Response} res - Response object pentru trimiterea răspunsului
+ * @returns {Promise<void>} - Răspuns JSON cu mesajul bot-ului
+ */
 const processMessage = async (req, res) => {
   try {
     const { userId, message } = req.body;
@@ -79,12 +92,17 @@ const processMessage = async (req, res) => {
     let botResponse;
     
     try {
-      // First try local knowledge base
+      
       console.log('Trying local knowledge base first...');
-      botResponse = enhancedFallbackService.findLocalResponse(message);
+      
+      
+      const recentHistory = chatHistory.messages.slice(-4);
+      
+      
+      botResponse = enhancedFallbackService.findLocalResponseWithContext(message, recentHistory);
       
       if (!botResponse && USE_OPENAI && OPENAI_API_KEY) {
-        // If no local response found, try OpenAI API
+        // 
         console.log('No local response found, trying OpenAI API...');
         
         const systemMessage = {
@@ -92,7 +110,7 @@ const processMessage = async (req, res) => {
           content: `You are an AI assistant specialized in helping diabetes patients. Respond in Romanian language. Keep responses concise but informative (max 3 paragraphs). Always remind users to consult healthcare professionals for medical advice.`
         };
         
-        // Prepare messages for OpenAI API
+        
         const recentMessages = chatHistory.messages
           .slice(-8)
           .map(msg => ({
@@ -102,7 +120,7 @@ const processMessage = async (req, res) => {
         
         const apiMessages = [systemMessage, ...recentMessages];
         
-        // Make request to OpenAI API
+        
         const openaiResponse = await axios.post(
           OPENAI_API_URL,
           {
@@ -119,27 +137,27 @@ const processMessage = async (req, res) => {
           }
         );
         
-        // Extract the bot's response
+        
         botResponse = openaiResponse.data.choices[0].message.content;
       }
       
       if (!botResponse) {
-        // Use generic fallback if no other response
+        
         botResponse = enhancedFallbackService.getGenericFallback();
       }
       
     } catch (apiError) {
       console.error('API error:', apiError.response?.data || apiError.message);
-      // If API call fails, fallback to generic response
+      
       botResponse = enhancedFallbackService.getGenericFallback();
     }
     
-    // Ensure we have a response
+    
     if (!botResponse) {
       botResponse = "Serviciul este momentan indisponibil. Vă rugăm încercați mai târziu.";
     }
     
-    // Add bot message to history
+    
     const botMessage = {
       sender: "bot",
       content: botResponse,
@@ -147,23 +165,29 @@ const processMessage = async (req, res) => {
     };
     chatHistory.messages.push(botMessage);
     
-    // Save updated chat history
+    
     await chatHistory.save();
     
-    // Return bot's response
+    
     return res.status(200).json({ message: botResponse });
     
   } catch (error) {
     console.error('Error processing message:', error);
     
-    // Ultimate fallback
+    
     const fallbackResponse = "Serviciul este momentan indisponibil. Vă rugăm încercați mai târziu.";
     
     return res.status(200).json({ message: fallbackResponse });
   }
 };
 
-// Clear chat history for a user
+/**
+ * Șterge complet istoricul conversației pentru un utilizator
+ * Validează utilizatorul și resetează array-ul de mesaje
+ * @param {Request} req - Request Express cu userId în params
+ * @param {Response} res - Response Express pentru confirmare
+ * @returns {Promise<void>} - Răspuns JSON cu status-ul operației
+ */
 const clearChatHistory = async (req, res) => {
   try {
     const { userId } = req.params;

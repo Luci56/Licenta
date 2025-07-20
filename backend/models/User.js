@@ -1,11 +1,15 @@
 const mongoose = require("mongoose");
 
-// Schema pentru medicamentație
+/**
+ * Schema pentru stocarea medicatiei diabetice complete.
+ * Include toate clasele de medicamente pentru diabet cu dozele si intensitatea tratamentului.
+ * Organizeaza medicamentele pe categorii conform ghidurilor clinice internationale.
+ */
 const medicationSchema = {
   // Biguanides
   metformin: {
     prescribed: { type: Boolean, default: false },
-    dosage: { type: Number, min: 0, max: 3000 }, // mg/day
+    dosage: { type: Number, min: 0, max: 3000 }, 
     intensity: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' }
   },
 
@@ -34,7 +38,7 @@ const medicationSchema = {
   },
   linagliptin: {
     prescribed: { type: Boolean, default: false },
-    dosage: { type: Number, default: 5 }, // Fixed dose
+    dosage: { type: Number, default: 5 }, 
     intensity: { type: String, enum: ['medium'], default: 'medium' }
   },
 
@@ -57,18 +61,17 @@ const medicationSchema = {
     intensity: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' }
   },
 
-  // Insulin (binary variable)
+  // Insulin 
   insulin: {
     prescribed: { type: Boolean, default: false },
     type: { type: String, enum: ['actrapid', 'apidra', 'insulatard', 'lantus', 'levemir', 'mixtard', 'novomix', 'novorapid'] },
     units_per_day: { type: Number, min: 0, max: 100 }
   },
 
-  // Additional information
   treatmentStartDate: { type: Date, default: Date.now },
   lastMedicationReview: { type: Date, default: Date.now },
-  adherenceScore: { type: Number, min: 0, max: 100, default: 85 }, // % compliance
-  sideEffects: [{ type: String }], // Array of reported side effects
+  adherenceScore: { type: Number, min: 0, max: 100, default: 85 }, 
+  sideEffects: [{ type: String }], 
   treatmentGoals: {
     targetHbA1c: { type: Number, min: 4.0, max: 10.0, default: 7.0 },
     targetFastingGlucose: { type: Number, min: 80, max: 130, default: 100 },
@@ -76,7 +79,11 @@ const medicationSchema = {
   }
 };
 
-// Schema extinsă pentru utilizatori
+/**
+ * Schema principala pentru utilizatorii aplicatiei DiabetCare.
+ * Stocheaza informatii complete despre pacienti: date personale, medicale,
+ * monitorizare zilnica, analize periodice si istoricul medical.
+ */
 const userSchema = mongoose.Schema(
   {
     email: {
@@ -113,7 +120,7 @@ const userSchema = mongoose.Schema(
       required: true,
     },
 
-    // Date pentru monitorizare zilnică (glicemia)
+    // Date pentru monitorizare zilnică 
     dailyData: [
       {
         date: {
@@ -281,7 +288,6 @@ const userSchema = mongoose.Schema(
       }
     },
 
-    // Scor de risc cardiovascular
     cardiovascularRisk: {
       score: { type: Number, min: 0, max: 100 },
       category: { type: String, enum: ['low', 'moderate', 'high', 'very_high'] },
@@ -314,7 +320,7 @@ userSchema.methods.getMedicationComplexity = function() {
   let complexity = 0;
   const meds = this.currentMedication;
   
-  // Count prescribed medications
+
   Object.keys(meds.toObject()).forEach(key => {
     if (meds[key] && meds[key].prescribed) {
       complexity++;

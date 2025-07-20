@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const User = require('../models/User');
 
-// Medication dosage mapping based on PDF
+
 const medicationDosages = {
   metformin: { low: 1000, medium: 2000, high: 3000 },
   gliclazide: { low: 80, medium: 160, high: 320 },
@@ -14,15 +14,15 @@ const medicationDosages = {
   acarbose: { low: 100, medium: 200, high: 300 }
 };
 
-// Helper functions
+
 const randomBetween = (min, max) => Math.random() * (max - min) + min;
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randomChoice = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomBool = (probability = 0.5) => Math.random() < probability;
 
-// Generate realistic clinical correlations
+
 const generateCorrelatedData = (hba1c, age, diseaseDuration) => {
-  // Base risk factors on HbA1c and disease duration
+  
   const riskFactor = (hba1c - 5.5) * 0.3 + diseaseDuration * 0.1;
   
   return {
@@ -39,11 +39,22 @@ const generateCorrelatedData = (hba1c, age, diseaseDuration) => {
   };
 };
 
-// Generate medication based on clinical profile
+/**
+ * Genereaza schema de medicatie bazata pe profilul clinic al pacientului.
+ * Implementeaza ghidurile clinice pentru tratamentul diabetului tip 2
+ * cu escaladarea terapeutica conform severității.
+ * 
+ * @param {number} hba1c - Hemoglobina glicata pentru determinarea intensității
+ * @param {boolean} hasHypertension - Prezenta hipertensiunii
+ * @param {boolean} hasHyperlipidemia - Prezenta hiperlipidemiei  
+ * @param {number} diseaseDuration - Durata bolii pentru alegerea medicamentelor
+ * @param {number} age - Varsta pentru personalizarea obiectivelor
+ * @returns {Object} Schema completa de medicatie cu dozele si intensitatea
+ */
 const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDuration, age) => {
   const medication = {};
   
-  // Metformin - first line therapy (85% of patients)
+  
   if (randomBool(0.85)) {
     const intensity = hba1c > 8.5 ? 'high' : hba1c > 7.5 ? 'medium' : 'low';
     medication.metformin = {
@@ -53,9 +64,9 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
     };
   }
 
-  // Second line therapy based on HbA1c and comorbidities
+ 
   if (hba1c > 7.0) {
-    // DPP-4 inhibitors (popular second line - 40%)
+    
     if (randomBool(0.4)) {
       const drug = randomChoice(['sitagliptin', 'vildagliptin', 'linagliptin']);
       const intensity = drug === 'linagliptin' ? 'medium' : randomChoice(['low', 'medium', 'high']);
@@ -65,7 +76,7 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
         intensity
       };
     }
-    // SGLT-2 inhibitors (especially if hypertension/cardiovascular risk - 30%)
+    
     else if (randomBool(0.3) && (hasHypertension || age > 60)) {
       const drug = randomChoice(['empagliflozin', 'dapagliflozin']);
       const intensity = randomChoice(['low', 'medium', 'high']);
@@ -75,7 +86,7 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
         intensity
       };
     }
-    // Sulfonylureas (older, cost-effective option - 25%)
+    
     else if (randomBool(0.25)) {
       const drug = randomChoice(['gliclazide', 'glipizide']);
       const intensity = randomChoice(['low', 'medium', 'high']);
@@ -87,9 +98,9 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
     }
   }
 
-  // Third line or poorly controlled diabetes (HbA1c > 9.0)
+  
   if (hba1c > 9.0 && randomBool(0.6)) {
-    // Add another drug or insulin
+    
     if (randomBool(0.4)) {
       medication.insulin = {
         prescribed: true,
@@ -97,7 +108,7 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
         units_per_day: randomInt(20, 60)
       };
     } else {
-      // Add alpha-glucosidase inhibitor
+      
       if (randomBool(0.2)) {
         const intensity = randomChoice(['low', 'medium', 'high']);
         medication.acarbose = {
@@ -109,7 +120,7 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
     }
   }
 
-  // Set treatment goals based on age and comorbidities
+  
   const targetHbA1c = age > 70 ? 8.0 : hasHypertension ? 7.5 : 7.0;
   
   medication.treatmentGoals = {
@@ -125,24 +136,31 @@ const generateMedication = (hba1c, hasHypertension, hasHyperlipidemia, diseaseDu
   return medication;
 };
 
-// Generate realistic patient data
+/**
+ * Genereaza un pacient sintetic complet cu toate datele medicale.
+ * Creeaza un profil realistic cu corelatii intre varsta, durata bolii,
+ * controlul glicemic, comorbiditati si schema de medicatie.
+ * 
+ * @param {number} index - Indexul pacientului pentru email unic
+ * @returns {Object} Obiect pacient complet conform schemei User
+ */
 const generatePatient = (index) => {
   const currentYear = new Date().getFullYear();
-  const birthYear = randomInt(1945, 1985); // Ages 40-80
+  const birthYear = randomInt(1945, 1985); //  40-80
   const age = currentYear - birthYear;
   const diagnosisYear = randomInt(Math.max(2000, birthYear + 25), currentYear - 1);
   const diseaseDuration = currentYear - diagnosisYear;
   
-  // Generate HbA1c with realistic distribution
+  
   const hba1c = randomBetween(5.8, 11.5);
   
-  // Generate correlated clinical data
+  
   const clinicalData = generateCorrelatedData(hba1c, age, diseaseDuration);
   
-  // Generate weight based on diabetes profile (higher BMI correlation)
+ 
   const height = randomInt(150, 190);
   const idealWeight = (height - 100) * 0.9;
-  const weight = Math.round(idealWeight + randomBetween(-10, 30)); // Trend towards overweight
+  const weight = Math.round(idealWeight + randomBetween(-10, 30)); 
   
   const patient = {
     email: `patient${index}@diabetes-study.com`,
@@ -153,10 +171,10 @@ const generatePatient = (index) => {
     weight,
     diagnosisYear,
     
-    // Daily glucose monitoring data (last 30 days)
+    
     dailyData: [],
     
-    // Analysis data (last 6 months)
+    
     analysisData: [{
       date: new Date(Date.now() - randomInt(1, 30) * 24 * 60 * 60 * 1000),
       systolicPressure: clinicalData.systolicPressure,
@@ -195,9 +213,9 @@ const generatePatient = (index) => {
     }
   };
 
-  // Generate daily glucose readings for last 30 days
+  
   for (let i = 0; i < 30; i++) {
-    const baseGlucose = hba1c * 28.7 - 46.7; // Convert HbA1c to average glucose
+    const baseGlucose = hba1c * 28.7 - 46.7; 
     const dailyVariation = randomBetween(-30, 50);
     patient.dailyData.push({
       date: new Date(Date.now() - i * 24 * 60 * 60 * 1000),
@@ -206,7 +224,7 @@ const generatePatient = (index) => {
     });
   }
 
-  // Generate medication profile
+  
   patient.currentMedication = generateMedication(
     hba1c, 
     clinicalData.hasHypertension, 
@@ -215,7 +233,7 @@ const generatePatient = (index) => {
     age
   );
 
-  // Add comorbidities based on risk factors
+  
   if (clinicalData.hasHypertension) {
     patient.clinicalInfo.comorbidities.push({
       condition: 'Hypertension',
@@ -235,13 +253,20 @@ const generatePatient = (index) => {
   return patient;
 };
 
-// Main population function
+/**
+ * Functia principala pentru popularea bazei de date cu pacienti sintetici.
+ * Genereaza numarul specificat de pacienti si ii insereaza in baza de date
+ * folosind inserare in loturi pentru performanta optimizata.
+ * 
+ * @param {number} numberOfPatients - Numarul de pacienti de generat (default: 100)
+ * @returns {Promise<void>} Promise care se rezolva la finalizarea popularii
+ * @throws {Error} Aruncă eroare daca popularea esueaza
+ */
 const populateDatabase = async (numberOfPatients = 100) => {
   try {
     console.log(`🔄 Generating ${numberOfPatients} synthetic patients...`);
     
-    // Clear existing patients (optional - uncomment if needed)
-    // await User.deleteMany({});
+    
     
     const patients = [];
     
@@ -254,13 +279,13 @@ const populateDatabase = async (numberOfPatients = 100) => {
       }
     }
     
-    // Insert patients in batches for better performance
+    
     console.log('💾 Inserting patients into database...');
     await User.insertMany(patients);
     
     console.log(`✅ Successfully populated database with ${numberOfPatients} patients!`);
     
-    // Generate summary statistics
+    
     const stats = await generateStats();
     console.log('\n📈 Database Statistics:');
     console.log(stats);
@@ -271,7 +296,7 @@ const populateDatabase = async (numberOfPatients = 100) => {
   }
 };
 
-// Generate database statistics
+
 const generateStats = async () => {
   const total = await User.countDocuments();
   const withMetformin = await User.countDocuments({ 'currentMedication.metformin.prescribed': true });
@@ -301,9 +326,9 @@ const generateStats = async () => {
   };
 };
 
-// CLI usage
+
 if (require.main === module) {
-  const connectDB = require('./config/db'); // Adjust path
+  const connectDB = require('./config/db'); 
   
   const main = async () => {
     try {

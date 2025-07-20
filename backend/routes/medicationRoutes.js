@@ -3,10 +3,10 @@ const { getMedicationRecommendations, getMedicationStats } = require("../control
 
 const router = express.Router();
 
-// Route to get medication recommendations for a specific user
+
 router.get("/recommendations/:userId", getMedicationRecommendations);
 
-// Route to get medication statistics
+
 router.get("/statistics", getMedicationStats);
 
 module.exports = router;
